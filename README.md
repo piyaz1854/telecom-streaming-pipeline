@@ -134,3 +134,74 @@ docker compose down
 ```
 docker compose down -v
 ```
+
+## Архитектура
+
+                        (Real-time Events Generator)
+                                      │
+                                      ▼
+                             Kafka Topic `telecom_events`
+                                      │
+                                      ▼
+                          Python Consumer (db-sink-consumer)
+                                      │
+                                      ▼
+                                 PostgreSQL (raw data)
+                                      │
+                                      ▼
+                     Airflow DAG: Refresh + Aggregation + Export
+                                      │
+                                      ▼
+                     Materialized Views + CSV (*.csv per batch)
+                                      │
+                                      ▼
+                               Streamlit Dashboard
+
+## Запуск генератора
+Симулятор создаёт случайные события телеком-сети (звонки, SMS, интернет-сессии и т.д.) и пушит их в Kafka
+```
+docker compose up -d rt-event-producer
+```
+
+Посмотреть логи:
+```
+docker logs -f rt-event-producer
+```
+
+## Consumer который сохраняет события в Postgres:
+```
+docker compose up -d db-sink-consumer
+```
+
+Быстрая проверка что все работает:
+```
+docker exec -it postgres psql -U rt_user -d rt_db -c \
+"SELECT * FROM telecom_events_raw ORDER BY ts_utc DESC LIMIT 10;"
+```
+
+## Ручной запуск DAG:
+```
+docker exec -it airflow-scheduler bash -lc \
+"airflow dags trigger telecom_refresh_and_export"
+```
+
+CSV будут появляться в контейнере Airflow:
+```
+/opt/airflow/logs/exports/agg_hourly_*.csv
+```
+
+Проверка файлов:
+```
+docker exec -it airflow-webserver bash -lc \
+'ls -lh /opt/airflow/logs/exports'
+```
+
+## Streamlit
+Запуск:
+```
+docker compose up -d dashboard
+```
+И будет доступно на:
+```
+http://localhost:8501
+```
